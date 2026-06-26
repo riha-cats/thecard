@@ -103,9 +103,8 @@
       border-radius: inherit;
       pointer-events: none;
       mix-blend-mode: screen; /* adds light instead of painting over the image */
-      /* stops trace an inverse-square area-light falloff (1/(1+(t/h)^2),
-         normalized to fade to zero) so there's no hard cutoff ring and the
-         core stays soft instead of reading as a hard spotlight */
+      /* --gi is the brightness (set from the face angle); the stops only
+         shape the falloff — soft core, clean fade so there's no edge ring */
       background: radial-gradient(82% 76% at var(--gx, 70%) var(--gy, 28%),
                   rgba(255, 255, 255, calc(var(--gi, 0) * 1.000)) 0%,
                   rgba(255, 255, 255, calc(var(--gi, 0) * 0.911)) 12%,
