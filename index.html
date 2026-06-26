@@ -93,6 +93,32 @@
       user-select: none;
     }
 
+    /* specular glare; --gx/--gy/--gi are driven per-face from JS so the
+       highlight tracks a light fixed to the screen, not to the card */
+    .face--front::after,
+    .face--back::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      mix-blend-mode: screen; /* adds light instead of painting over the image */
+      /* stops trace an inverse-square area-light falloff (1/(1+(t/h)^2),
+         normalized to fade to zero) so there's no hard cutoff ring and the
+         core stays soft instead of reading as a hard spotlight */
+      background: radial-gradient(82% 76% at var(--gx, 70%) var(--gy, 28%),
+                  rgba(255, 255, 255, calc(var(--gi, 0) * 1.000)) 0%,
+                  rgba(255, 255, 255, calc(var(--gi, 0) * 0.911)) 12%,
+                  rgba(255, 255, 255, calc(var(--gi, 0) * 0.710)) 24%,
+                  rgba(255, 255, 255, calc(var(--gi, 0) * 0.502)) 36%,
+                  rgba(255, 255, 255, calc(var(--gi, 0) * 0.334)) 48%,
+                  rgba(255, 255, 255, calc(var(--gi, 0) * 0.210)) 60%,
+                  rgba(255, 255, 255, calc(var(--gi, 0) * 0.122)) 72%,
+                  rgba(255, 255, 255, calc(var(--gi, 0) * 0.059)) 84%,
+                  rgba(255, 255, 255, calc(var(--gi, 0) * 0.026)) 92%,
+                  rgba(255, 255, 255, 0) 100%);
+    }
+
     /* edges are pulled in by --r so they stop short of the rounded corners
        instead of poking square tabs past them */
     .face--left,
@@ -177,8 +203,52 @@
       const STOP = 0.002;  // deg/ms below which the coast has effectively ended
       const MAX_DT = 64;   // clamp gaps so a backgrounded tab doesn't launch the card
 
+      // --- lighting ------------------------------------------------------------
+      // CSS transform space: x right, y down, z out of the screen toward us.
+      // The light sits top-right and in front, so up is -y and front is +z.
+      const dot = (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+      const norm = (v) => { const m = Math.hypot(v[0], v[1], v[2]); return [v[0]/m, v[1]/m, v[2]/m]; };
+
+      const L = norm([0.6, -0.7, 0.55]);            // card -> light direction
+      const H = norm([L[0], L[1], L[2] + 1]);       // half vector with the view dir (0,0,1)
+      const SHINE = 2.2;   // lower = broader, softer angular response (area light)
+      const MAXA = 0.4;    // peak glare opacity
+      const SPREAD = 42;   // how far (in %) the highlight slides across a face
+
+      // each face carries its rest-pose normal/right/up in card-local space;
+      // the back is rotateY(180), so its normal and right axis are flipped
+      const front = card.querySelector('.face--front');
+      const back = card.querySelector('.face--back');
+      const litFaces = [
+        { el: front, n: [0, 0, 1],  r: [1, 0, 0],  u: [0, 1, 0] },
+        { el: back,  n: [0, 0, -1], r: [-1, 0, 0], u: [0, 1, 0] },
+      ];
+
+      // rotate v by the card's transform: rotateX(a) after rotateY(b)
+      function spin(v, a, b) {
+        const cb = Math.cos(b), sb = Math.sin(b);
+        const x = v[0]*cb + v[2]*sb, z = -v[0]*sb + v[2]*cb, y = v[1];
+        const ca = Math.cos(a), sa = Math.sin(a);
+        return [x, y*ca - z*sa, y*sa + z*ca];
+      }
+
+      function updateGlare() {
+        const a = rotX * Math.PI / 180, b = rotY * Math.PI / 180;
+        for (const f of litFaces) {
+          const n = spin(f.n, a, b);
+          const facing = dot(n, H);
+          const gi = facing > 0 ? Math.pow(facing, SHINE) * MAXA : 0;
+          const gx = 50 + dot(H, spin(f.r, a, b)) * SPREAD;
+          const gy = 50 + dot(H, spin(f.u, a, b)) * SPREAD;
+          f.el.style.setProperty('--gx', gx.toFixed(1) + '%');
+          f.el.style.setProperty('--gy', gy.toFixed(1) + '%');
+          f.el.style.setProperty('--gi', gi.toFixed(3));
+        }
+      }
+
       function render() {
         card.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+        updateGlare();
       }
 
       function onPointerDown(e) {
